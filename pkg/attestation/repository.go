@@ -1,26 +1,31 @@
-package pkg
+package attestation
 
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/vulcanize/lotus-index-attestation/pkg/types"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/xerrors"
 )
 
+var _ types.ChecksumRepository = (*Repo)(nil)
+
 var (
-	repoDBName              = "checksums.db"
-	checkSumExistsStmt      = "SELECT EXISTS(SELECT 1 FROM checksums WHERE hash = ?)"
-	insertCheckSumStmt      = "INSERT INTO checksums (start, stop, hash) VALUES (?, ?, ?)"
-	getChecksumForRangeStmt = "SELECT hash FROM checksums where start = ? AND stop = ?"
-	findLatestCheckSumStmt  = "SELECT stop FROM checksums ORDER BY stop DESC LIMIT 1"
-	findChecksumGapsStmt    = `SELECT start + ? AS first_missing, (next_nc - ?) AS last_missing
-FROM (SELECT start, LEAD(start) OVER (ORDER BY start) AS next_nc FROM checksums WHERE start >= ? AND start <= ?) h
-WHERE next_nc > start + ?`
+	repoDBName               = "checksums.db"
+	checkSumExistsStmt       = "SELECT EXISTS(SELECT 1 FROM checksums WHERE hash = ?)"
+	insertCheckSumStmt       = "INSERT INTO checksums (start, stop, hash) VALUES (?, ?, ?)"
+	getChecksumForRangeStmt  = "SELECT hash FROM checksums where start = ? AND stop = ?"
+	findLatestCheckSumStmt   = "SELECT stop FROM checksums ORDER BY stop DESC LIMIT 1"
+	findChecksumGapsBaseStmt = "SELECT start + ? AS first_missing, (next_nc - ?) AS last_missing " +
+		"FROM (SELECT start, LEAD(start) OVER (ORDER BY start) AS next_nc FROM checksums %s) h " +
+		"WHERE next_nc > start + ?"
 )
 
 var repoDBDefs = []string{
@@ -36,10 +41,12 @@ var repoDBDefs = []string{
 }
 
 type Repo struct {
-	repoDB *sql.DB
+	repoDB   *sql.DB
+	interval uint
 }
 
-func NewRepo(repoDir string) (*Repo, bool, error) {
+// NewRepo creates a new checksum repository object
+func NewRepo(repoDir string, interval uint) (*Repo, bool, error) {
 	var existed bool
 	repoDBPath := filepath.Join(repoDir, repoDBName)
 	_, err := os.Stat(repoDBPath)
@@ -63,19 +70,22 @@ func NewRepo(repoDir string) (*Repo, bool, error) {
 			return nil, existed, xerrors.Errorf("create checksum db schema (stmt: %s): %w", stmt, err)
 		}
 	}
-	return &Repo{repoDB: repoDB}, existed, nil
+	return &Repo{repoDB: repoDB, interval: interval}, existed, nil
 }
 
+// PublishChecksum publishes the given checksum hash for the given range
 func (r *Repo) PublishChecksum(start, stop uint, hash string) error {
 	_, err := r.repoDB.Exec(insertCheckSumStmt, start, stop, hash)
 	return err
 }
 
+// ChecksumExists checks if the given checksum hash exists in the repository
 func (r *Repo) ChecksumExists(hash string) (bool, error) {
 	var exists bool
 	return false, r.repoDB.QueryRow(checkSumExistsStmt, hash).Scan(&exists)
 }
 
+// GetChecksum gets the checksum for the given range
 func (r *Repo) GetChecksum(start, stop uint) (string, error) {
 	var hash string
 	err := r.repoDB.QueryRow(getChecksumForRangeStmt, start, stop).Scan(&hash)
@@ -85,17 +95,27 @@ func (r *Repo) GetChecksum(start, stop uint) (string, error) {
 	return hash, err
 }
 
+// FindNextChecksum finds the `start` epoch for the next checksum that needs to be published
 func (r *Repo) FindNextChecksum() (uint, error) {
 	var lastStop uint
 	err := r.repoDB.QueryRow(findLatestCheckSumStmt).Scan(&lastStop)
 	if err == sql.ErrNoRows {
 		return 0, nil
 	}
-	return lastStop+1, err
+	return lastStop + 1, err
 }
 
-func (r *Repo) FindGaps(start, stop uint64) ([][2]uint, error) {
-	rows, err := r.repoDB.Query(findChecksumGapsStmt, start, stop)
+// FindGaps finds gaps in the checksums table between start and stop (inclusive)
+func (r *Repo) FindGaps(start, stop int) ([][2]uint, error) {
+	var where string
+	if start >= 0 && stop >= 0 && start <= stop {
+		where = fmt.Sprintf("WHERE epoch >= %d AND epoch <= %d", start, stop)
+	} else if start >= 0 {
+		where = fmt.Sprintf("WHERE epoch >= %d", start)
+	} else if stop >= 0 {
+		where = fmt.Sprintf("WHERE epoch <= %d", stop)
+	}
+	rows, err := r.repoDB.Query(fmt.Sprintf(findChecksumGapsBaseStmt, where), r.interval, r.interval, r.interval)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			logrus.Infof("No gaps found for range %d to %d", start, stop)
@@ -115,6 +135,7 @@ func (r *Repo) FindGaps(start, stop uint64) ([][2]uint, error) {
 	return gaps, nil
 }
 
+// Close implements io.Closer
 func (r *Repo) Close() error {
 	return r.repoDB.Close()
 }
