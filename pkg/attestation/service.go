@@ -75,6 +75,7 @@ func (s *Service) Checksum(ctx context.Context, wg *sync.WaitGroup) (error, <-ch
 	if s.cs == nil {
 		return fmt.Errorf("cannot checksum without a checksummer"), nil
 	}
+	// TODO: if c.CheckForGaps == true, check for gaps in the checksum repo and backfill them before starting
 	wg.Add(1)
 	start := s.start
 	errChan := make(chan error)
