@@ -83,6 +83,7 @@ func (m *CheckSummer) FindGaps(start, stop uint) ([][2]uint, error) {
 }
 
 // Checksum checksums a chunk defined by the start and stop epochs (inclusive)
+// this method assumes there are no gaps, so use the FindGaps first beforehand if we can't rely on another guarantee
 func (m *CheckSummer) Checksum(start, stop uint) (string, error) {
 	// Create the path for the temporary database file
 	tempDBPath := filepath.Join(m.tempDir, messagesDB)

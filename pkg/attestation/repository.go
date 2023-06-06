@@ -86,12 +86,12 @@ func (r *Repo) GetChecksum(start, stop uint) (string, error) {
 }
 
 func (r *Repo) FindNextChecksum() (uint, error) {
-	var nextStart uint
-	err := r.repoDB.QueryRow(findLatestCheckSumStmt).Scan(&nextStart)
+	var lastStop uint
+	err := r.repoDB.QueryRow(findLatestCheckSumStmt).Scan(&lastStop)
 	if err == sql.ErrNoRows {
 		return 0, nil
 	}
-	return nextStart, err
+	return lastStop+1, err
 }
 
 func (r *Repo) FindGaps(start, stop uint64) ([][2]uint, error) {
