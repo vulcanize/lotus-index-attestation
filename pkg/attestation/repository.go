@@ -8,11 +8,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/vulcanize/lotus-index-attestation/pkg/types"
-
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/xerrors"
+
+	"github.com/vulcanize/lotus-index-attestation/pkg/types"
 )
 
 var _ types.ChecksumRepository = (*Repo)(nil)
@@ -23,9 +23,12 @@ var (
 	insertCheckSumStmt       = "INSERT INTO checksums (start, stop, hash) VALUES (?, ?, ?)"
 	getChecksumForRangeStmt  = "SELECT hash FROM checksums where start = ? AND stop = ?"
 	findLatestCheckSumStmt   = "SELECT stop FROM checksums ORDER BY stop DESC LIMIT 1"
-	findChecksumGapsBaseStmt = "SELECT start + ? AS first_missing, (next_nc - ?) AS last_missing " +
+	findChecksumGapsBaseStmt = "SELECT start as first_missing, (next_start-1) as last_missing from " +
+		"(SELECT start, stop, LEAD(start) OVER (ORDER BY start) AS next_start) h WHERE next_start > stop + 1"
+	findChecksumGapsBaseStmt2 = "SELECT start + ? AS first_missing, (next_nc - ?) AS last_missing " +
 		"FROM (SELECT start, LEAD(start) OVER (ORDER BY start) AS next_nc FROM checksums %s) h " +
 		"WHERE next_nc > start + ?"
+	defaultChecksumChunkSize uint = 2880
 )
 
 var repoDBDefs = []string{
@@ -47,6 +50,9 @@ type Repo struct {
 
 // NewRepo creates a new checksum repository object
 func NewRepo(repoDir string, interval uint) (*Repo, bool, error) {
+	if interval == 0 {
+		interval = defaultChecksumChunkSize
+	}
 	var existed bool
 	repoDBPath := filepath.Join(repoDir, repoDBName)
 	_, err := os.Stat(repoDBPath)
@@ -115,7 +121,7 @@ func (r *Repo) FindGaps(start, stop int) ([][2]uint, error) {
 	} else if stop >= 0 {
 		where = fmt.Sprintf("WHERE epoch <= %d", stop)
 	}
-	rows, err := r.repoDB.Query(fmt.Sprintf(findChecksumGapsBaseStmt, where), r.interval, r.interval, r.interval)
+	rows, err := r.repoDB.Query(fmt.Sprintf(findChecksumGapsBaseStmt2, where), r.interval, r.interval, r.interval)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			logrus.Infof("No gaps found for range %d to %d", start, stop)
@@ -138,4 +144,9 @@ func (r *Repo) FindGaps(start, stop int) ([][2]uint, error) {
 // Close implements io.Closer
 func (r *Repo) Close() error {
 	return r.repoDB.Close()
+}
+
+// Interval returns the checksum interval used for this repo
+func (r *Repo) Interval() uint {
+	return r.interval
 }

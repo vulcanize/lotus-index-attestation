@@ -1,6 +1,8 @@
 package attestation
 
 import (
+	"fmt"
+
 	"github.com/vulcanize/lotus-index-attestation/pkg/types"
 )
 
@@ -18,8 +20,8 @@ func NewAPI(repo types.ChecksumRepository) *API {
 }
 
 // ChecksumExists returns true if the given checksum is published in the backing checksum repository
-func (A API) ChecksumExists(hash string, res *bool) error {
-	exists, err := A.backend.ChecksumExists(hash)
+func (a API) ChecksumExists(hash string, res *bool) error {
+	exists, err := a.backend.ChecksumExists(hash)
 	if err != nil {
 		return err
 	}
@@ -28,8 +30,14 @@ func (A API) ChecksumExists(hash string, res *bool) error {
 }
 
 // GetChecksum returns the checksum for the given start and stop values
-func (A API) GetChecksum(rng types.GetChecksumRequest, res *string) error {
-	hash, err := A.backend.GetChecksum(rng.Start, rng.Stop)
+func (a API) GetChecksum(rng types.GetChecksumRequest, res *string) error {
+	if rng.Stop-rng.Stop != a.backend.Interval() {
+		return fmt.Errorf("checksum expected to span an interval of size %d", a.backend.Interval())
+	}
+	if rng.Stop%a.backend.Interval() != 0 {
+		return fmt.Errorf("checksum range must start at a multiple of the interval size %d", a.backend.Interval())
+	}
+	hash, err := a.backend.GetChecksum(rng.Start, rng.Stop)
 	if err != nil {
 		return err
 	}
