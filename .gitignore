@@ -1,3 +1,5 @@
 .idea/
 lotus-index-attestation
 test.db
+msgindex.db
+checksums.db
