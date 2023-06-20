@@ -23,8 +23,6 @@ type Service struct {
 	quit              chan struct{}
 }
 
-var defaultChecksumChunkSize uint = 2880
-
 // NewServiceFromConfig creates a new attestation service from a config object
 func NewServiceFromConfig(c *Config) (*Service, error) {
 	var cs types.Checksummer
@@ -34,9 +32,6 @@ func NewServiceFromConfig(c *Config) (*Service, error) {
 		if err != nil {
 			return nil, err
 		}
-	}
-	if c.ChecksumChunkSize == 0 {
-		c.ChecksumChunkSize = defaultChecksumChunkSize
 	}
 	repo, existed, err := NewRepo(c.RepoDBDir, c.ChecksumChunkSize)
 	if err != nil {

@@ -21,6 +21,7 @@ type ChecksumRepository interface {
 	GetChecksum(start, stop uint) (string, error)
 	FindNextChecksum() (uint, error)
 	FindGaps(start, stop int) ([][2]uint, error)
+	Interval() uint
 	io.Closer
 }
 

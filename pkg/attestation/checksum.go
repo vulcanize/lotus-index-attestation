@@ -28,8 +28,8 @@ var (
 	findMsgIndexGapsBaseStmt = "SELECT epoch + 1 AS first_missing, (next_nc - 1) AS last_missing " +
 		"FROM (SELECT epoch, LEAD(epoch) OVER (ORDER BY epoch) AS next_nc FROM src.messages %s) h " +
 		"WHERE next_nc > epoch + 1"
-	doesEpochExistStmt        = "SELECT EXISTS(SELECT 1 FROM src.messages WHERE epoch = ?)"
-	checkRangeIsPopulatedStmt = fmt.Sprintf("SELECT EXISTS(%s)", findMsgIndexGapsBaseStmt)
+	doesEpochExistStmt            = "SELECT EXISTS(SELECT 1 FROM src.messages WHERE epoch = ?)"
+	checkRangeIsPopulatedBaseStmt = fmt.Sprintf("SELECT EXISTS(%s)", findMsgIndexGapsBaseStmt)
 )
 
 // from lotus chain/store/sqlite/msgindex.go
@@ -151,7 +151,7 @@ func (cs *CheckSummer) CheckRangeIsPopulated(start, stop uint) (bool, error) {
 	// if they do, check that the full range is populated
 	where := fmt.Sprintf("WHERE epoch >= %d AND epoch <= %d", start, stop)
 	var exists bool
-	if err := cs.srcDB.QueryRow(fmt.Sprintf(checkRangeIsPopulatedStmt, where)).Scan(&exists); err != nil {
+	if err := cs.srcDB.QueryRow(fmt.Sprintf(checkRangeIsPopulatedBaseStmt, where)).Scan(&exists); err != nil {
 		return false, err
 	}
 	return exists, nil
